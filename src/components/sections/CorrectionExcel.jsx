@@ -276,8 +276,9 @@ export default function CorrectionExcel() {
             if (match) {
                 const [_, day, month, year, hours, minutes] = match
                 if (hours && minutes) {
-                    // With time: "2025-12-22T10:30:00"
-                    return `${year}-${month}-${day}T${hours.padStart(2, '0')}:${minutes}:00`
+                    // With time: Keep exact time as specified in Excel without timezone conversion
+                    // Add Z to make it UTC time (which will display exactly as in Excel)
+                    return `${year}-${month}-${day}T${hours.padStart(2, '0')}:${minutes}:00Z`
                 } else {
                     // Date only: "2025-12-22"
                     return `${year}-${month}-${day}`

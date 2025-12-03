@@ -153,6 +153,19 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
 
     const formatDateTime = (dateStr) => {
         if (!dateStr) return '-'
+        
+        // Vérifier si la date a un Z à la fin (format UTC)
+        if (typeof dateStr === 'string' && dateStr.endsWith('Z')) {
+            // Utiliser le parse manuel pour préserver l'heure exacte sans conversion
+            const parts = dateStr.slice(0, -1).split('T') // Retirer le Z et séparer date et heure
+            const dateParts = parts[0].split('-')
+            const timeParts = parts[1].split(':')
+            
+            // Construire une chaîne de date au format français
+            return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]}:${timeParts[1]}`
+        }
+        
+        // Pour les autres formats, utiliser la méthode standard
         const date = new Date(dateStr)
         return date.toLocaleString('fr-FR')
     }
@@ -170,6 +183,8 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
         setExpandedFile(null)
         fetchFiles()
     }
+
+    // Fonction de recherche supprimée
 
     const totalLeads = filteredFiles.reduce((sum, file) => sum + file.count, 0)
 
@@ -237,6 +252,12 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
                 </div>
             </div>
 
+            <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-slate-800">
+                    {filteredFiles.length} Fichier(s) - {totalLeads} Leads {isFilterActive ? "(filtrés)" : ""}
+                </h2>
+            </div>
+
             {/* Filtres de date */}
             <div className="glass-effect rounded-xl p-4">
                 <h2 className="text-xl font-semibold text-slate-800 mb-3 flex items-center gap-2">
@@ -288,18 +309,10 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
                         <span className="font-medium">Du {new Date(startDate).toLocaleDateString('fr-FR')} au {new Date(endDate).toLocaleDateString('fr-FR')}</span>
                     </div>
                 )}
-            </div>
-            
-            {/* Stats */}
-            <div className="glass-effect rounded-xl p-4">
-                <div className="flex items-center justify-between">
-                    <p className="text-sm text-slate-600">
-                        <span className="font-semibold text-slate-800">{totalLeads}</span> leads au total dans <span className="font-semibold text-slate-800">{filteredFiles.length}</span> fichier(s)
-                        {isFilterActive && <span className="ml-2 text-blue-600">(filtrés par date d'injection)</span>}
-                    </p>
-                    
-                    {/* Bouton "Les doublons" uniquement pour l'onglet Nouveau leads */}
-                    {onglet === 'Nouveau leads' && (
+                
+                {/* Button pour les doublons */}
+                {onglet === 'Nouveau leads' && (
+                    <div className="mt-3">
                         <button 
                             onClick={fetchDuplicates}
                             className="flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 transition-colors text-sm font-medium"
@@ -307,8 +320,8 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
                             <AlertTriangle className="w-4 h-4" />
                             Les doublons
                         </button>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
 
             {/* Files List */}

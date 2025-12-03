@@ -56,9 +56,24 @@ export default function SuiviLeads() {
             year: 'numeric'
         })
     }
+    
+    // Fonction de recherche supprimée
 
     const formatDateTime = (dateStr) => {
         if (!dateStr) return '-'
+        
+        // Vérifier si la date a un Z à la fin (format UTC)
+        if (typeof dateStr === 'string' && dateStr.endsWith('Z')) {
+            // Utiliser le parse manuel pour préserver l'heure exacte sans conversion
+            const parts = dateStr.slice(0, -1).split('T') // Retirer le Z et séparer date et heure
+            const dateParts = parts[0].split('-')
+            const timeParts = parts[1].split(':')
+            
+            // Construire une chaîne de date au format français
+            return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]}:${timeParts[1]}`
+        }
+        
+        // Pour les autres formats, utiliser la méthode standard
         const date = new Date(dateStr)
         return date.toLocaleString('fr-FR', {
             day: '2-digit',
@@ -203,7 +218,15 @@ export default function SuiviLeads() {
                                                     </div>
                                                     
                                                     {/* Dates importantes selon statut */}
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                        {/* Date de création du lead - Ajouté */}
+                                                        <div className="flex items-start gap-3 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                                            <Clock className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                                                            <div>
+                                                                <p className="text-xs text-blue-500 uppercase font-medium">Date de création</p>
+                                                                <p className="text-blue-700 font-semibold">{formatDateTime(entry.date_creation_lead || entry.created_at)}</p>
+                                                            </div>
+                                                        </div>
                                                         {entry.statut_lead === 'Nouveau' ? (
                                                             /* Pour les leads avec statut Nouveau */
                                                             <>
@@ -211,7 +234,7 @@ export default function SuiviLeads() {
                                                                     <Clock className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
                                                                     <div>
                                                                         <p className="text-xs text-blue-500 uppercase font-medium">Date de création</p>
-                                                                        <p className="text-blue-700 font-semibold">{formatDateTime(entry.date_creation_lead) || '-'}</p>
+                                                                        <p className="text-blue-700 font-semibold">{formatDateTime(entry.date_creation_lead || entry.created_at) || '-'}</p>
                                                                     </div>
                                                                 </div>
                                                                 <div className="flex items-start gap-3 bg-purple-50 p-3 rounded-lg border border-purple-100">

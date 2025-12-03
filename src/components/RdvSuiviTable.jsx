@@ -39,6 +39,7 @@ export default function RdvSuiviTable({ onglet, icon: Icon, title, description }
         } catch (error) {
             console.error('Erreur lors de la récupération des leads :', error)
             setLeads([])
+            setFilteredLeads([])
         } finally {
             setLoading(false)
         }
@@ -59,6 +60,19 @@ export default function RdvSuiviTable({ onglet, icon: Icon, title, description }
 
     const formatDateTime = (dateStr) => {
         if (!dateStr) return '-'
+        
+        // Vérifier si la date a un Z à la fin (format UTC)
+        if (typeof dateStr === 'string' && dateStr.endsWith('Z')) {
+            // Utiliser le parse manuel pour préserver l'heure exacte sans conversion
+            const parts = dateStr.slice(0, -1).split('T') // Retirer le Z et séparer date et heure
+            const dateParts = parts[0].split('-')
+            const timeParts = parts[1].split(':')
+            
+            // Construire une chaîne de date au format français
+            return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]}:${timeParts[1]}`
+        }
+        
+        // Pour les autres formats, utiliser la méthode standard
         const date = new Date(dateStr)
         return date.toLocaleString('fr-FR')
     }
@@ -116,6 +130,8 @@ export default function RdvSuiviTable({ onglet, icon: Icon, title, description }
                     </div>
                 </div>
             </div>
+            
+            {/* Champ de recherche supprimé */}
 
             {/* Tableau des rendez-vous */}
             {loading ? (

@@ -45,6 +45,19 @@ export default function HistoriqueModal({ lead, onClose }) {
 
     const formatDateTime = (dateStr) => {
         if (!dateStr) return '-'
+        
+        // Vérifier si la date a un Z à la fin (format UTC)
+        if (typeof dateStr === 'string' && dateStr.endsWith('Z')) {
+            // Utiliser le parse manuel pour préserver l'heure exacte sans conversion
+            const parts = dateStr.slice(0, -1).split('T') // Retirer le Z et séparer date et heure
+            const dateParts = parts[0].split('-')
+            const timeParts = parts[1].split(':')
+            
+            // Construire une chaîne de date au format français
+            return `${dateParts[2]}/${dateParts[1]}/${dateParts[0]} ${timeParts[0]}:${timeParts[1]}`
+        }
+        
+        // Pour les autres formats, utiliser la méthode standard
         const date = new Date(dateStr)
         return date.toLocaleString('fr-FR')
     }
@@ -55,39 +68,45 @@ export default function HistoriqueModal({ lead, onClose }) {
         return date.toLocaleDateString('fr-FR')
     }
 
-    // Créer un historique simulé basé sur les informations du lead
+    // Créer un historique simulé basé sur les informations du lead et son statut actuel
     const createSimulatedHistory = () => {
-        const entries = [
-            {
-                id: `${lead.id}-creation`,
-                type: 'Nouveau leads',
-                date_injection: lead.created_at,
-                nom: lead.nom,
-                statut_lead: 'nouveau',
-                proprietaire_contact: lead.proprietaire_contact,
-                date_derniere_modification: lead.date_derniere_modification || lead.created_at,
-                date_attribution: lead.date_attribution_proprietaire,
-                email: lead.email,
-                telephone: lead.telephone,
-                code_postal: lead.code_postal
-            }
-        ]
-
-        // Ajouter une entrée pour le rendez-vous si disponible
+        const entries = []
+        
+        // Si le lead a un rendez-vous, c'est un RDV pris
         if (lead.date_heure_rdv) {
             entries.push({
                 id: `${lead.id}-rdv`,
                 type: 'RDV pris',
-                date_injection: lead.date_prise_rdv || lead.date_derniere_modification,
+                date_injection: lead.date_prise_rdv || lead.date_derniere_modification || lead.created_at,
+                date_creation: lead.date_creation_lead || lead.created_at, // Utiliser la date de création du lead
                 nom: lead.nom,
                 statut_lead: 'rdv_pris',
                 proprietaire_contact: lead.proprietaire_contact,
-                date_derniere_modification: lead.date_prise_rdv || lead.date_derniere_modification,
+                date_derniere_modification: lead.date_derniere_modification,
                 date_attribution: lead.date_attribution_proprietaire,
                 email: lead.email,
                 telephone: lead.telephone,
                 code_postal: lead.code_postal,
-                date_heure_rdv: lead.date_heure_rdv
+                date_heure_rdv: lead.date_heure_rdv,
+                date_prise_rdv: lead.date_prise_rdv
+            })
+        } 
+        // Sinon, c'est un nouveau lead ou autre statut
+        else {
+            entries.push({
+                id: `${lead.id}-creation`,
+                type: lead.statut_lead === 'rdv_pris' ? 'RDV pris' : 'Nouveau leads',
+                date_injection: lead.created_at,
+                date_creation: lead.date_creation_lead || lead.created_at, // Utiliser la date de création du lead
+                nom: lead.nom,
+                statut_lead: lead.statut_lead || 'nouveau',
+                proprietaire_contact: lead.proprietaire_contact,
+                date_derniere_modification: lead.date_derniere_modification,
+                date_attribution: lead.date_attribution_proprietaire,
+                email: lead.email,
+                telephone: lead.telephone,
+                code_postal: lead.code_postal,
+                date_prise_rdv: lead.statut_lead === 'rdv_pris' ? (lead.date_prise_rdv || lead.date_derniere_modification) : null
             })
         }
 
@@ -189,7 +208,7 @@ export default function HistoriqueModal({ lead, onClose }) {
                                                 </div>
 
                                                 {/* Dates */}
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                                                     <div className="p-3 bg-amber-50 rounded-lg">
                                                         <div className="flex items-start">
                                                             <div className="mr-2">
@@ -198,7 +217,7 @@ export default function HistoriqueModal({ lead, onClose }) {
                                                             <div>
                                                                 <div className="text-xs text-amber-700 mb-1">DERNIÈRE MODIFICATION</div>
                                                                 <div className="text-sm font-medium text-amber-800">
-                                                                    {formatDateTime(entry.date_derniere_modification || lead.date_derniere_modification)}
+                                                                    {formatDateTime(entry.date_derniere_modification)}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -212,6 +231,19 @@ export default function HistoriqueModal({ lead, onClose }) {
                                                                 <div className="text-xs text-green-700 mb-1">DATE D'ATTRIBUTION</div>
                                                                 <div className="text-sm font-medium text-green-800">
                                                                     {formatDateTime(entry.date_attribution || lead.date_attribution_proprietaire)}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 bg-blue-50 rounded-lg">
+                                                        <div className="flex items-start">
+                                                            <div className="mr-2">
+                                                                <Clock className="w-4 h-4 text-blue-500" />
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-xs text-blue-700 mb-1">DATE DE CRÉATION</div>
+                                                                <div className="text-sm font-medium text-blue-800">
+                                                                    {formatDateTime(entry.date_creation || lead.date_creation_lead || lead.created_at)}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -239,9 +271,18 @@ export default function HistoriqueModal({ lead, onClose }) {
 
                                                 {/* RDV info if available */}
                                                 {(entry.date_heure_rdv || entry.type === 'RDV pris') && (
-                                                    <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                                                    <div className="mt-3 p-3 bg-blue-50 rounded-lg space-y-2">
                                                         <div className="text-sm text-blue-700 font-medium">
                                                             Rendez-vous programmé pour le {formatDateTime(entry.date_heure_rdv || lead.date_heure_rdv)}
+                                                        </div>
+                                                        <div className="flex items-start gap-2">
+                                                            <Clock className="w-4 h-4 text-blue-500 mt-0.5" />
+                                                            <div>
+                                                                <div className="text-xs text-blue-700 mb-0.5">DATE DE PRISE DU RDV</div>
+                                                                <div className="text-sm font-medium text-blue-800">
+                                                                    {formatDate(entry.date_prise_rdv || lead.date_prise_rdv)}
+                                                                </div>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
