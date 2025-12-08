@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import * as XLSX from 'xlsx'
-import { Upload, Download, FileSpreadsheet, Check, AlertCircle, FileType, Calendar, Trash2, CopyMinus, Eraser, Scissors, Send, AlertTriangle, Search } from 'lucide-react'
+import { Upload, Download, FileSpreadsheet, Check, AlertCircle, FileType, Calendar, Trash2, CopyMinus, Eraser, Scissors, Send, AlertTriangle, Search, RefreshCw } from 'lucide-react'
 import { supabase } from '../../config/supabase'
 import DuplicateLeadsModal from '../DuplicateLeadsModal'
 
@@ -22,6 +22,7 @@ export default function CorrectionExcel() {
     const [fileName, setFileName] = useState('')
     const [isInjecting, setIsInjecting] = useState(false)
     const [injectionStatus, setInjectionStatus] = useState(null)
+    const [injectionProgress, setInjectionProgress] = useState({ current: 0, total: 0, percent: 0 })
 
     // Options
     const [removeEmpty, setRemoveEmpty] = useState(true)
@@ -405,18 +406,83 @@ export default function CorrectionExcel() {
         }
     }
 
+    // Fonction de délai pour éviter les timeouts et forcer le rendu React
+    const delay = (ms) => new Promise(resolve => {
+        setTimeout(() => {
+            requestAnimationFrame(() => {
+                resolve()
+            })
+        }, ms)
+    })
+
+    // Fonction pour réessayer un lot en cas d'échec
+    const insertBatchWithRetry = async (batch, retries = 3) => {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const { error } = await supabase.from('leads').insert(batch)
+                if (error) throw error
+                return { success: true }
+            } catch (error) {
+                console.warn(`Tentative ${attempt}/${retries} échouée:`, error.message)
+                if (attempt === retries) {
+                    return { success: false, error }
+                }
+                // Attendre avant de réessayer (délai exponentiel)
+                await delay(1000 * attempt)
+            }
+        }
+    }
+
     const handleInjection = async () => {
         if (!data.length) return
+        
+        console.log('🚀 Démarrage de l\'injection...')
+        console.log(`📊 Nombre de lignes: ${data.length}`)
+        
         setIsInjecting(true)
         setInjectionStatus(null)
         setHasDuplicates(false)
         setDuplicateNames([])
+        
+        const totalRows = data.length
+        const totalBatches = Math.ceil(totalRows / 50)
+        
+        // Afficher immédiatement la barre de progression
+        setInjectionProgress({ 
+            current: 0, 
+            total: totalRows, 
+            percent: 0,
+            batch: 0,
+            totalBatches: totalBatches,
+            status: 'Préparation des données...'
+        })
+        
+        console.log('📝 Barre de progression initialisée')
+        
+        // Petit délai pour permettre à React de mettre à jour l'interface
+        await delay(100)
+        
+        console.log('✅ Délai passé, début du traitement')
 
         try {
+            console.log('🔄 Mapping des données...')
             const rowsToInsert = data.map(row => mapRowToSupabase(row, headers))
+            console.log(`✅ Mapping terminé: ${rowsToInsert.length} lignes`)
             
-            // Vérifier les doublons avant l'injection
-            const { duplicates } = await checkForDuplicateNames(rowsToInsert)
+            // Mettre à jour le statut
+            setInjectionProgress(prev => ({ ...prev, status: 'Vérification des doublons...' }))
+            await delay(50)
+            
+            // Vérifier les doublons avant l'injection (seulement si moins de 500 lignes pour éviter les blocages)
+            console.log('🔍 Vérification des doublons...')
+            let duplicates = []
+            if (rowsToInsert.length <= 500) {
+                const result = await checkForDuplicateNames(rowsToInsert)
+                duplicates = result.duplicates || []
+            } else {
+                console.log('⚠️ Fichier volumineux - vérification des doublons ignorée')
+            }
+            console.log(`✅ Vérification terminée: ${duplicates.length} doublons`)
             
             // S'il y a des doublons, les signaler mais continuer l'injection
             if (duplicates && duplicates.length > 0) {
@@ -424,27 +490,80 @@ export default function CorrectionExcel() {
                 setDuplicateNames(duplicates.map(dup => dup.nom))
             }
 
-            const batchSize = 100
+            // Taille de lot réduite pour les fichiers volumineux
+            const batchSize = 50
+            let successCount = 0
+            let failedBatches = []
+
             for (let i = 0; i < rowsToInsert.length; i += batchSize) {
                 const batch = rowsToInsert.slice(i, i + batchSize)
-                const { error } = await supabase.from('leads').insert(batch)
-                if (error) throw error
+                const batchNumber = Math.floor(i / batchSize) + 1
+                
+                // Mettre à jour la progression AVANT l'envoi du lot
+                const progress = Math.round((i / rowsToInsert.length) * 100)
+                setInjectionProgress({ 
+                    current: i, 
+                    total: rowsToInsert.length, 
+                    percent: progress,
+                    batch: batchNumber,
+                    totalBatches: totalBatches,
+                    status: `Envoi du lot ${batchNumber}/${totalBatches}...`
+                })
+                
+                // Petit délai pour permettre le rendu
+                await delay(10)
+
+                // Insérer le lot avec logique de réessai
+                const result = await insertBatchWithRetry(batch)
+                
+                if (result.success) {
+                    successCount += batch.length
+                } else {
+                    failedBatches.push({ batchNumber, error: result.error, count: batch.length })
+                }
+
+                // Petit délai entre les lots pour éviter les surcharges
+                if (i + batchSize < rowsToInsert.length) {
+                    await delay(200)
+                }
             }
 
-            let successMessage = `${rowsToInsert.length} lignes envoyées avec succès vers "${selectedTab}" !`
-            
-            // Ajouter un message sur les doublons si nécessaire
-            if (duplicates && duplicates.length > 0) {
-                successMessage += ` (${duplicates.length} doublons détectés)`
+            // Message de succès avec détails
+            if (failedBatches.length === 0) {
+                let successMessage = `${successCount} lignes envoyées avec succès vers "${selectedTab}" !`
+                if (duplicates && duplicates.length > 0) {
+                    successMessage += ` (${duplicates.length} doublons détectés)`
+                }
+                setInjectionStatus({ type: 'success', message: successMessage })
+            } else {
+                const failedCount = failedBatches.reduce((sum, b) => sum + b.count, 0)
+                setInjectionStatus({ 
+                    type: 'error', 
+                    message: `${successCount} lignes envoyées, mais ${failedCount} lignes ont échoué. Vérifiez les données et réessayez.` 
+                })
             }
-            
-            setInjectionStatus({ type: 'success', message: successMessage })
         } catch (error) {
             console.error('Error injecting data:', error)
             setInjectionStatus({ type: 'error', message: `Erreur : ${error.message}` })
         } finally {
             setIsInjecting(false)
+            setInjectionProgress({ current: 0, total: 0, percent: 0 })
         }
+    }
+
+    // Fonction pour réinitialiser et permettre une nouvelle importation
+    const handleNewImport = () => {
+        setFile(null)
+        setData([])
+        setHeaders([])
+        setCorrected(false)
+        setStats({ total: 0, corrected: 0, removed: 0 })
+        setDuplicateNames([])
+        setHasDuplicates(false)
+        setAllDuplicates([])
+        setFileName('')
+        setInjectionStatus(null)
+        setInjectionProgress({ current: 0, total: 0, percent: 0 })
     }
 
     return (
@@ -454,8 +573,19 @@ export default function CorrectionExcel() {
                     <h2 className="text-2xl font-bold text-slate-800">Correction Excel</h2>
                     <p className="text-slate-500">Importez vos fichiers Excel/CSV pour corriger les erreurs d'encodage</p>
                 </div>
-                <div className="p-3 bg-green-50 rounded-xl">
-                    <FileSpreadsheet className="w-6 h-6 text-green-600" />
+                <div className="flex items-center gap-3">
+                    {data.length > 0 && (
+                        <button
+                            onClick={handleNewImport}
+                            className="flex items-center gap-2 px-4 py-2 bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors text-sm font-medium"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                            Nouvelle importation
+                        </button>
+                    )}
+                    <div className="p-3 bg-green-50 rounded-xl">
+                        <FileSpreadsheet className="w-6 h-6 text-green-600" />
+                    </div>
                 </div>
             </div>
 
@@ -538,7 +668,7 @@ export default function CorrectionExcel() {
                                                 {isInjecting ? (
                                                     <>
                                                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                                        Envoi...
+                                                        Envoi... {injectionProgress.percent}%
                                                     </>
                                                 ) : (
                                                     <>
@@ -552,6 +682,36 @@ export default function CorrectionExcel() {
                                 )}
                             </div>
                         </div>
+
+                        {/* Barre de progression pour les fichiers volumineux */}
+                        {isInjecting && injectionProgress.total > 0 && (
+                            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium text-blue-700">
+                                        {injectionProgress.status || `Envoi en cours... ${injectionProgress.current} / ${injectionProgress.total} lignes`}
+                                    </span>
+                                    <span className="text-sm font-bold text-blue-700">
+                                        {injectionProgress.percent}%
+                                    </span>
+                                </div>
+                                <div className="w-full bg-blue-200 rounded-full h-3">
+                                    <div 
+                                        className="bg-blue-600 h-3 rounded-full transition-all duration-300 ease-out"
+                                        style={{ width: `${injectionProgress.percent}%` }}
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between mt-2">
+                                    <p className="text-xs text-blue-600">
+                                        {injectionProgress.current} / {injectionProgress.total} lignes
+                                    </p>
+                                    {injectionProgress.batch > 0 && (
+                                        <p className="text-xs text-blue-600">
+                                            Lot {injectionProgress.batch} sur {injectionProgress.totalBatches}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {injectionStatus && (
                             <div className={`p-4 rounded-lg flex items-center gap-3 ${injectionStatus.type === 'success' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'
