@@ -75,7 +75,7 @@ export default function DuplicateLeadsModal({ duplicates, onClose }) {
                                                             <th className="px-6 py-3 text-left font-medium whitespace-nowrap">NOM</th>
                                                             <th className="px-6 py-3 text-left font-medium whitespace-nowrap">TÉLÉPHONE</th>
                                                             <th className="px-6 py-3 text-left font-medium whitespace-nowrap">DATE D'INJECTION</th>
-                                                            <th className="px-6 py-3 text-left font-medium whitespace-nowrap">ONGLET</th>
+                                                            <th className="px-6 py-3 text-left font-medium whitespace-nowrap">FICHIER</th>
                                                             <th className="px-6 py-3 text-left font-medium whitespace-nowrap">STATUT</th>
                                                         </tr>
                                                     </thead>
@@ -101,9 +101,9 @@ export default function DuplicateLeadsModal({ duplicates, onClose }) {
                                                                     )}
                                                                 </td>
                                                                 <td className="px-6 py-4 text-slate-600">
-                                                                    {lead.onglet && (
+                                                                    {lead.nom_fichier && (
                                                                         <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                                                                            {lead.onglet}
+                                                                            {lead.nom_fichier}
                                                                         </span>
                                                                     )}
                                                                 </td>

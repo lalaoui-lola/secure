@@ -14,7 +14,9 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
     const [isFilterActive, setIsFilterActive] = useState(false)
     const [showDuplicatesModal, setShowDuplicatesModal] = useState(false)
     const [duplicates, setDuplicates] = useState([])
+    const [filesPage, setFilesPage] = useState(1)
     const leadsPerPage = 50
+    const filesPerPage = 10
 
     useEffect(() => {
         fetchFiles()
@@ -30,40 +32,66 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
         setLoading(true)
         try {
             // Get distinct file names with lead counts
-            let query = supabase
-                .from('leads')
-                .select('nom_fichier, id, created_at')
-                .eq('onglet', onglet)
+            // Récupérer tous les leads sans limite pour avoir tous les fichiers
+            let allData = []
+            let from = 0
+            const batchSize = 1000
+            let hasMore = true
 
-            // Ajouter les filtres de date si nécessaire
-            if (startDate && endDate) {
-                // Convertir à la fin de la journée pour endDate pour inclure toute la journée
-                const endDateWithTime = new Date(endDate)
-                endDateWithTime.setHours(23, 59, 59, 999)
-                
-                query = query
-                    .gte('created_at', startDate)
-                    .lte('created_at', endDateWithTime.toISOString())
+            while (hasMore) {
+                let query = supabase
+                    .from('leads')
+                    .select('nom_fichier, id, created_at')
+                    .eq('onglet', onglet)
+                    .range(from, from + batchSize - 1)
+
+                // Ajouter les filtres de date si nécessaire
+                if (startDate && endDate) {
+                    const endDateWithTime = new Date(endDate)
+                    endDateWithTime.setHours(23, 59, 59, 999)
+                    
+                    query = query
+                        .gte('created_at', startDate)
+                        .lte('created_at', endDateWithTime.toISOString())
+                }
+
+                const { data, error } = await query
+
+                if (error) throw error
+
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data]
+                    from += batchSize
+                    hasMore = data.length === batchSize
+                } else {
+                    hasMore = false
+                }
             }
 
-            const { data, error } = await query
+            const data = allData
 
-            if (error) throw error
-
-            // Group by file name and count
+            // Group by file name and count, keeping track of earliest injection date
             const fileMap = {}
             data.forEach(lead => {
                 const fileName = lead.nom_fichier || 'Sans nom'
                 if (!fileMap[fileName]) {
-                    fileMap[fileName] = 0
+                    fileMap[fileName] = { count: 0, earliestDate: lead.created_at }
                 }
-                fileMap[fileName]++
+                fileMap[fileName].count++
+                // Garder la date la plus ancienne
+                if (lead.created_at < fileMap[fileName].earliestDate) {
+                    fileMap[fileName].earliestDate = lead.created_at
+                }
             })
 
-            const fileList = Object.entries(fileMap).map(([name, count]) => ({
+            const fileList = Object.entries(fileMap).map(([name, data]) => ({
                 name,
-                count
+                count: data.count,
+                earliestDate: data.earliestDate
             }))
+
+            // Trier par date d'injection (plus récent en premier)
+            fileList.sort((a, b) => new Date(b.earliestDate) - new Date(a.earliestDate))
 
             setFiles(fileList)
             setFilteredFiles(fileList)
@@ -173,6 +201,7 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
     const applyDateFilter = () => {
         setIsFilterActive(Boolean(startDate && endDate))
         setExpandedFile(null)
+        setFilesPage(1)
         fetchFiles()
     }
     
@@ -181,8 +210,13 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
         setEndDate('')
         setIsFilterActive(false)
         setExpandedFile(null)
+        setFilesPage(1)
         fetchFiles()
     }
+
+    // Pagination des fichiers
+    const totalFilesPages = Math.ceil(filteredFiles.length / filesPerPage)
+    const paginatedFiles = filteredFiles.slice((filesPage - 1) * filesPerPage, filesPage * filesPerPage)
 
     // Fonction de recherche supprimée
 
@@ -194,9 +228,8 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
             // Récupérer uniquement les leads de l'onglet "Nouveau leads" avec statut "nouveau"
             const { data: leadsData, error: leadsError } = await supabase
                 .from('leads')
-                .select('nom, id, created_at, telephone, onglet, statut_lead')
+                .select('nom, id, created_at, telephone, nom_fichier, statut_lead')
                 .eq('onglet', 'Nouveau leads')
-                .eq('statut_lead', 'nouveau')
                 .order('created_at', { ascending: false })
             
             if (leadsError) throw leadsError
@@ -335,7 +368,7 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {filteredFiles.map((file) => (
+                    {paginatedFiles.map((file) => (
                         <FileCard
                             key={file.name}
                             file={file}
@@ -351,6 +384,34 @@ export default function LeadsTable({ onglet, icon: Icon, title, description }) {
                             leadsPerPage={leadsPerPage}
                         />
                     ))}
+
+                    {/* Pagination des fichiers */}
+                    {totalFilesPages > 1 && (
+                        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-200">
+                            <p className="text-sm text-slate-600">
+                                Page <span className="font-semibold text-slate-800">{filesPage}</span> sur <span className="font-semibold text-slate-800">{totalFilesPages}</span>
+                                <span className="ml-2 text-slate-400">({filteredFiles.length} fichiers au total)</span>
+                            </p>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setFilesPage(Math.max(1, filesPage - 1))}
+                                    disabled={filesPage === 1}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium text-slate-700"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                    Précédent
+                                </button>
+                                <button
+                                    onClick={() => setFilesPage(Math.min(totalFilesPages, filesPage + 1))}
+                                    disabled={filesPage === totalFilesPages}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium text-slate-700"
+                                >
+                                    Suivant
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
             

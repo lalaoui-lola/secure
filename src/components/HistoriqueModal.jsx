@@ -14,13 +14,13 @@ export default function HistoriqueModal({ lead, onClose }) {
     const fetchHistorique = async () => {
         setLoading(true)
         try {
-            // Récupérer l'historique du lead en utilisant son identifiant
-            // Cette requête est similaire à celle utilisée dans l'onglet "Suivi leads"
+            // Rechercher le lead par nom ET téléphone dans tous les onglets (comme dans Suivi Leads)
             const { data, error } = await supabase
-                .from('leads_history')
+                .from('leads')
                 .select('*')
-                .eq('lead_id', lead.id)
-                .order('date_modification', { ascending: false })
+                .ilike('nom', `%${lead.nom.trim()}%`)
+                .eq('telephone', lead.telephone)
+                .order('created_at', { ascending: true })
 
             if (error) throw error
             
@@ -66,6 +66,17 @@ export default function HistoriqueModal({ lead, onClose }) {
         if (!dateStr) return '-'
         const date = new Date(dateStr)
         return date.toLocaleDateString('fr-FR')
+    }
+
+    const getOngletColor = (onglet) => {
+        const colors = {
+            'Nouveau leads': 'bg-blue-100 text-blue-700 border-blue-200',
+            'Leads traité': 'bg-green-100 text-green-700 border-green-200',
+            'RDV pris': 'bg-purple-100 text-purple-700 border-purple-200',
+            'RDV j+1': 'bg-orange-100 text-orange-700 border-orange-200',
+            'RDV autre centre': 'bg-pink-100 text-pink-700 border-pink-200'
+        }
+        return colors[onglet] || 'bg-gray-100 text-gray-700 border-gray-200'
     }
 
     // Créer un historique simulé basé sur les informations du lead et son statut actuel
@@ -161,12 +172,12 @@ export default function HistoriqueModal({ lead, onClose }) {
                                         <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                                             {/* Card header */}
                                             <div className="p-4 flex flex-wrap items-center gap-3">
-                                                <span className="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-sm font-medium">
-                                                    {entry.type || 'Nouveau leads'}
+                                                <span className={`px-3 py-1 rounded-full text-sm font-semibold border ${getOngletColor(entry.onglet)}`}>
+                                                    {entry.onglet || entry.type || 'Nouveau leads'}
                                                 </span>
                                                 <div className="flex items-center text-sm text-slate-500">
                                                     <Calendar className="w-4 h-4 mr-1" />
-                                                    Date injection: {formatDate(entry.date_injection)}
+                                                    Date injection: {formatDate(entry.created_at || entry.date_injection)}
                                                 </div>
                                             </div>
 
@@ -270,22 +281,32 @@ export default function HistoriqueModal({ lead, onClose }) {
                                                 </div>
 
                                                 {/* RDV info if available */}
-                                                {(entry.date_heure_rdv || entry.type === 'RDV pris') && (
+                                                {(entry.date_heure_rdv || entry.date_prise_rdv) && (
                                                     <div className="mt-3 p-3 bg-blue-50 rounded-lg space-y-2">
-                                                        <div className="text-sm text-blue-700 font-medium">
-                                                            Rendez-vous programmé pour le {formatDateTime(entry.date_heure_rdv || lead.date_heure_rdv)}
-                                                        </div>
-                                                        <div className="flex items-start gap-2">
-                                                            <Clock className="w-4 h-4 text-blue-500 mt-0.5" />
-                                                            <div>
-                                                                <div className="text-xs text-blue-700 mb-0.5">DATE DE PRISE DU RDV</div>
-                                                                <div className="text-sm font-medium text-blue-800">
-                                                                    {formatDate(entry.date_prise_rdv || lead.date_prise_rdv)}
+                                                        {entry.date_heure_rdv && (
+                                                            <div className="text-sm text-blue-700 font-medium">
+                                                                Rendez-vous programmé pour le {formatDateTime(entry.date_heure_rdv)}
+                                                            </div>
+                                                        )}
+                                                        {entry.date_prise_rdv && (
+                                                            <div className="flex items-start gap-2">
+                                                                <Clock className="w-4 h-4 text-blue-500 mt-0.5" />
+                                                                <div>
+                                                                    <div className="text-xs text-blue-700 mb-0.5">DATE DE PRISE DU RDV</div>
+                                                                    <div className="text-sm font-medium text-blue-800">
+                                                                        {formatDate(entry.date_prise_rdv)}
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
+                                                        )}
                                                     </div>
                                                 )}
+
+                                                {/* Fichier source */}
+                                                <div className="text-xs text-slate-400 flex items-center gap-2 pt-2 mt-3 border-t border-slate-100">
+                                                    <FileText className="w-3 h-3" />
+                                                    <span>Fichier: {entry.nom_fichier || 'Non spécifié'}</span>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

@@ -30,6 +30,7 @@ export default function RdvSuiviTable({ onglet, icon: Icon, title, description }
             const { data, error } = await supabase
                 .from('leads')
                 .select('*')
+                .eq('onglet', 'RDV j+1')
                 .gte('date_heure_rdv', startDateStr)
                 .lte('date_heure_rdv', endDateStr)
                 .order('date_heure_rdv', { ascending: true })
